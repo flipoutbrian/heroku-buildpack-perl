@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+
+#set -e            # fail fast
+#set -o pipefail   # don't ignore exit codes when piping output
+#set -x          # enable debugging
+
+# Configure directories
+BUILD_DIR=$1
+CACHE_DIR=$2
+ENV_DIR=$3
+
+BP_DIR=$(dirname $(dirname $0))  ## doesn't this just resove to BUILD_DIR?
+
+# Load some convenience functions like status(), error() and indent()
+source ${BP_DIR}/bin/common.sh
+
+export PERL_MB_OPT="--install_base ${BUILD_DIR}/perl5"
+export PERL_MM_OPT="INSTALL_BASE=${BUILD_DIR}/perl5"
+export PERL5LIB="${BUILD_DIR}/perl5/lib/perl5"
+export PERL_CPANM_OPT="--quiet --notest"
+PATH=${BUILD_DIR}/perl5/bin:$PATH
+# Scope config var availability only to `npm install`
+(
+  if [ -d "${ENV_DIR}" ]; then
+    status "Exporting config vars to environment"
+    export_env_dir ${ENV_DIR}
+  fi
+)
+
+
+## Clear the build directory of previous build package stuff.  
+## (rebuild it below)
+if [ -d ${BUILD_DIR}/perl5 ]; then
+    rm -fr ${BUILD_DIR}/perl5
+fi
+mkdir -p ${BUILD_DIR}/perl5/bin ${BUILD_DIR}/perl5/lib
+
+## If we have cached data then copy it into the build_dir
+if [ -d ${CACHE_DIR}/perl5 ]; then
+    cp -fr ${CACHE_DIR}/perl5 ${BUILD_DIR}
+fi
+
+CPANM=${BUILD_DIR}/perl5/bin/cpanm
+if [ ! -x ${CPANM} ]; then
+    cd ${BUILD_DIR}/perl5/bin
+    curl -LO http://xrl.us/cpanm
+    chmod ug+x cpanm
+fi
+
+if [ ! -x ${CPANM} ]; then
+     error "${CPANM} is not an executable"
+     exit 1
+fi
+
+set -x
+cd ${BUILD_DIR}
+${CPANM} --local-lib=${BUILD_DIR}/perl5 local::lib && eval $(perl -I ${BUILD_DIR}/perl5/lib/perl5/ -Mlocal::lib)
+
+## Now we want to install dependencies and Starman
+status "Installing dependencies"
+${CPANM} --installdeps . 2>&1 | indent
+
+if [ ! -x ${BUILD_DIR}/perl5/bin/starman ]; then
+    status "Installing Starman"
+    ${CPANM} Starman 2>&1 | indent
+fi
+
+if [ -d ${HOME}/perl5 -a ${HOME} != ${BUILD_DIR} ]; then
+    status "Moving from ${HOME}/perl5 to ${BUILD_DIR}/perl5"
+    cp -fr ${HOME}/perl5 ${BUILD_DIR}
+    rm -fr ${HOME}/perl5
+fi
+
+## and finally clear and build up the Cache dir
+if [ -d ${CACHE_DIR}/perl5 ]; then
+    rm -fr ${CACHE_DIR}/perl5
+fi
+cp -fr ${BUILD_DIR}/perl5 ${CACHE_DIR}

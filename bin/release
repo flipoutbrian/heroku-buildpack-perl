@@ -1,0 +1,10 @@
+#!/bin/sh
+
+cat << EOF
+---
+addons:
+config_vars:
+  PATH: ./perl5/bin:/usr/local/bin:/usr/bin:/bin
+default_process_types:
+  web: perl -Mlib=./perl5/lib/perl5 ./perl5/bin/starman --preload-app --port \$PORT ./bin/app.pl
+EOF
